@@ -1428,14 +1428,11 @@ window.WEDDING_CONFIG = {
     document.removeEventListener('click', openInvitation);
     document.removeEventListener('touchend', onTouchEnd);
 
-    // Start background music — called inside a user gesture so both
-    // iOS Safari and Android Chrome allow audio playback.
-    startMusic();
-
-    // Keep video muted — the wedding song is the audio for the opening.
-    // Playing two unmuted audio sources from one gesture causes browsers
-    // to silently block one of them (usually the background music).
-    openingVideo.muted = true;
+    // Play the video unmuted as the opening sound.
+    // We do NOT call startMusic() here — starting two unmuted audio
+    // sources from one gesture causes browsers to silently block one.
+    // Instead, the wedding song fades in after the video ends (see completeOpening).
+    openingVideo.muted = false;
 
     // Safety net: if playback hasn't actually started within a few
     // seconds, don't leave guests stuck on a frozen tap screen —
@@ -1480,6 +1477,47 @@ window.WEDDING_CONFIG = {
   openingVideo.addEventListener('ended', completeOpening);
 
   function completeOpening(){
+    // Fade out the video's own audio, then fade in the wedding song
+    if(openingVideo && !openingVideo.paused){
+      // quick volume ramp down on the video
+      const ramp = setInterval(() => {
+        if(openingVideo.volume > 0.05){
+          openingVideo.volume = Math.max(0, openingVideo.volume - 0.08);
+        } else {
+          openingVideo.volume = 0;
+          openingVideo.muted = true;
+          clearInterval(ramp);
+        }
+      }, 40);
+    }
+
+    // Start wedding song — fade it in from 0 to target volume
+    audio.volume = 0;
+    const p = audio.play();
+    if(p && p.then){
+      p.then(() => {
+        isPlaying = true;
+        disc.classList.add('spinning');
+        musicBtn.classList.remove('needs-tap');
+        // ramp up volume over ~1.2s
+        const fadeIn = setInterval(() => {
+          if(audio.volume < 0.44){
+            audio.volume = Math.min(0.45, audio.volume + 0.03);
+          } else {
+            audio.volume = 0.45;
+            clearInterval(fadeIn);
+          }
+        }, 40);
+      }).catch(() => {
+        // play() was called outside a fresh gesture here (video ended
+        // naturally), which some strict browsers block. Fall back to
+        // the pulsing button so the guest can tap to start music.
+        isPlaying = false;
+        musicBtn.classList.add('needs-tap');
+        attachAutoRetry();
+      });
+    }
+
     if(window.gsap){
       gsap.to(opening, {
         opacity: 0,

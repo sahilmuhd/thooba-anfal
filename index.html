@@ -1330,8 +1330,9 @@ window.WEDDING_CONFIG = {
   let isPlaying = false;
 
   // Keep audio src in sync with config if overridden, else use the
-  // hardcoded src="music.mp3" already on the element
-  if(CFG.media.backgroundMusicUrl){
+  // hardcoded src already on the element. Only set if different to avoid
+  // resetting the element's network state and losing buffered data.
+  if(CFG.media.backgroundMusicUrl && audio.src !== new URL(CFG.media.backgroundMusicUrl, location.href).href){
     audio.src = CFG.media.backgroundMusicUrl;
   }
   audio.volume = 0.45;
@@ -1433,10 +1434,7 @@ window.WEDDING_CONFIG = {
     startMusic();
 
     // Unmute the video so it plays with its own audio as the opening sound.
-    // We call load() first to reset any stale decoder state (Chrome Android
-    // cached-video bug), then play() unmuted.
     openingVideo.muted = false;
-    openingVideo.load();
 
     // Safety net: if playback hasn't actually started within a few
     // seconds, don't leave guests stuck on a frozen tap screen —
@@ -1453,9 +1451,15 @@ window.WEDDING_CONFIG = {
     });
 
     openingVideo.play().catch((err) => {
-      console.warn('Video play failed:', err);
-      clearTimeout(fallbackTimer);
-      completeOpening();
+      console.warn('Video play failed (first attempt):', err);
+      // On Chrome Android a cached decoder can stall — reset and retry once
+      openingVideo.muted = true; // muted is more likely to succeed on retry
+      openingVideo.load();
+      openingVideo.play().catch((err2) => {
+        console.warn('Video play failed (retry):', err2);
+        clearTimeout(fallbackTimer);
+        completeOpening();
+      });
     });
 
     // Reveal the music toggle immediately so guests can mute/unmute

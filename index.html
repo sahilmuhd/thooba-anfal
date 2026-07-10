@@ -1428,13 +1428,14 @@ window.WEDDING_CONFIG = {
     document.removeEventListener('click', openInvitation);
     document.removeEventListener('touchend', onTouchEnd);
 
-    // Start background music — called inside a user gesture (the first
-    // tap/click anywhere on the screen) so both iOS Safari and Android
-    // Chrome allow audio playback without restriction
+    // Start background music — called inside a user gesture so both
+    // iOS Safari and Android Chrome allow audio playback.
     startMusic();
 
-    // Unmute the video so it plays with its own audio as the opening sound.
-    openingVideo.muted = false;
+    // Keep video muted — the wedding song is the audio for the opening.
+    // Playing two unmuted audio sources from one gesture causes browsers
+    // to silently block one of them (usually the background music).
+    openingVideo.muted = true;
 
     // Safety net: if playback hasn't actually started within a few
     // seconds, don't leave guests stuck on a frozen tap screen —
@@ -1453,7 +1454,6 @@ window.WEDDING_CONFIG = {
     openingVideo.play().catch((err) => {
       console.warn('Video play failed (first attempt):', err);
       // On Chrome Android a cached decoder can stall — reset and retry once
-      openingVideo.muted = true; // muted is more likely to succeed on retry
       openingVideo.load();
       openingVideo.play().catch((err2) => {
         console.warn('Video play failed (retry):', err2);

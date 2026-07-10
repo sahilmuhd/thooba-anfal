@@ -184,6 +184,66 @@ a{color:inherit; text-decoration:none;}
   70% { opacity: 0;   transform: scale(1.6); }
   100%{ opacity: 0;   transform: scale(1.6); }
 }
+
+/* tap-to-open overlay */
+#tap-hint{
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(14px, 3vw, 20px);
+  pointer-events: none;
+  transition: opacity 0.6s ease;
+}
+#tap-hint .tap-ring{
+  width: clamp(72px, 20vw, 96px);
+  height: clamp(72px, 20vw, 96px);
+  border-radius: 50%;
+  border: 1.5px solid rgba(212,175,55,0.85);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: tap-ring-breathe 2.4s ease-in-out infinite;
+}
+#tap-hint .tap-ring::before{
+  content: "";
+  position: absolute;
+  inset: -14px;
+  border-radius: 50%;
+  border: 1px solid rgba(212,175,55,0.3);
+  animation: ring-pulse 2.2s ease-out infinite;
+}
+#tap-hint .tap-ring::after{
+  content: "";
+  position: absolute;
+  inset: -28px;
+  border-radius: 50%;
+  border: 1px solid rgba(212,175,55,0.12);
+  animation: ring-pulse 2.2s ease-out infinite 0.4s;
+}
+#tap-hint .tap-ring svg{
+  width: clamp(22px, 6vw, 30px);
+  height: clamp(22px, 6vw, 30px);
+  margin-left: 4px; /* optical center for triangle */
+}
+#tap-hint .tap-label{
+  font-family: var(--body);
+  font-size: clamp(10px, 2.6vw, 12px);
+  letter-spacing: 0.35em;
+  text-transform: uppercase;
+  color: rgba(252,250,246,0.85);
+  text-shadow: 0 1px 10px rgba(0,0,0,0.7);
+  animation: open-hint-pulse 2.4s ease-in-out infinite;
+}
+@keyframes tap-ring-breathe{
+  0%, 100% { transform: scale(1);   box-shadow: 0 0 0 0 rgba(212,175,55,0); }
+  50%       { transform: scale(1.06); box-shadow: 0 0 18px 4px rgba(212,175,55,0.18); }
+}
+#tap-hint.hidden{ opacity: 0; }
 #petal-layer{
   position: fixed; inset:0;
   pointer-events:none;
@@ -1038,8 +1098,15 @@ footer#footer img { display: block; }
   <video id="opening-video" playsinline preload="metadata" muted poster="assets/video-poster.jpg">
     <source src="opening-video.mp4" type="video/mp4">
   </video>
-  <!-- No visible button: the whole screen is tappable to open (see JS below).
-       This still counts as a user gesture on iOS/Android so audio is allowed to play. -->
+  <!-- tap to open overlay -->
+  <div id="tap-hint">
+    <div class="tap-ring">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M6 4L20 12L6 20V4Z" fill="rgba(212,175,55,0.92)"/>
+      </svg>
+    </div>
+    <span class="tap-label">Tap to Open</span>
+  </div>
 </div>
 
 <!-- ambient petal layer -->
@@ -1339,6 +1406,7 @@ window.WEDDING_CONFIG = {
   /* ---------------- opening → main reveal ---------------- */
   const opening = document.getElementById('opening');
   const openingVideo = document.getElementById('opening-video');
+  const tapHint = document.getElementById('tap-hint');
 
   let opened = false;
 
@@ -1351,6 +1419,9 @@ window.WEDDING_CONFIG = {
     if(opened) return;
     opened = true;
 
+    // Hide the tap hint immediately
+    tapHint.classList.add('hidden');
+
     // Remove all listeners immediately so subsequent taps on the real
     // page (RSVP buttons, links, etc.) behave normally
     document.removeEventListener('click', openInvitation);
@@ -1361,15 +1432,10 @@ window.WEDDING_CONFIG = {
     // Chrome allow audio playback without restriction
     startMusic();
 
-    // The opening video is always muted — wedding-song.mp3 (started
-    // above) is the only audio during the intro.
-    openingVideo.muted = true;
-
-    // On Chrome for Android, a page refresh can leave a previously
-    // cached <video> element's decoder in a stalled state where
-    // play() never resolves or rejects (works fine on a fresh load,
-    // breaks after reload). Calling load() resets the element before
-    // we try to play it again, which clears that stuck state.
+    // Unmute the video so it plays with its own audio as the opening sound.
+    // We call load() first to reset any stale decoder state (Chrome Android
+    // cached-video bug), then play() unmuted.
+    openingVideo.muted = false;
     openingVideo.load();
 
     // Safety net: if playback hasn't actually started within a few

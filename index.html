@@ -1399,8 +1399,17 @@ window.WEDDING_CONFIG = {
       audio.pause();
       isPlaying = false;
       disc.classList.remove('spinning');
+      if(musicBtn._gainNode) musicBtn._gainNode.gain.setValueAtTime(0, musicBtn._audioCtx.currentTime);
     } else {
-      startMusic();
+      if(musicBtn._gainNode){
+        audio.play().catch(()=>{});
+        musicBtn._gainNode.gain.setValueAtTime(0, musicBtn._audioCtx.currentTime);
+        musicBtn._gainNode.gain.linearRampToValueAtTime(0.45, musicBtn._audioCtx.currentTime + 0.5);
+        isPlaying = true;
+        disc.classList.add('spinning');
+      } else {
+        startMusic();
+      }
     }
   });
 
@@ -1428,11 +1437,13 @@ window.WEDDING_CONFIG = {
     document.removeEventListener('click', openInvitation);
     document.removeEventListener('touchend', onTouchEnd);
 
-    // ── Cling chime via Web Audio API ─────────────────────────────
-    // Synthesised instantly inside the gesture — no file, no autoplay block.
-    // Two slightly-detuned sine tones decay together for a bell/cling feel.
+    // ── Cling chime + start wedding song via one AudioContext ────────
+    // Everything routed through a single AudioContext unlocked by this
+    // gesture — browser allows all sources to play simultaneously.
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+      // 1. Cling chime — three detuned sine tones for a bell strike
       [[880, 0], [1108, 0.04], [1318, 0.09]].forEach(([freq, delay]) => {
         const osc  = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -1446,12 +1457,34 @@ window.WEDDING_CONFIG = {
         osc.start(ctx.currentTime + delay);
         osc.stop(ctx.currentTime + delay + 2.2);
       });
-    } catch(e) { /* AudioContext not supported — silent fallback */ }
 
-    // Play the video unmuted as the opening sound.
-    // We do NOT call startMusic() here — starting two unmuted audio
-    // sources from one gesture causes browsers to silently block one.
-    // Instead, the wedding song fades in after the video ends (see completeOpening).
+      // 2. Wedding song — connect the <audio> element into the same context
+      //    so it plays concurrently with no autoplay block
+      const musicSource = ctx.createMediaElementSource(audio);
+      const musicGain   = ctx.createGain();
+      musicSource.connect(musicGain);
+      musicGain.connect(ctx.destination);
+      musicGain.gain.setValueAtTime(0, ctx.currentTime);
+      musicGain.gain.linearRampToValueAtTime(0.45, ctx.currentTime + 1.5);
+      audio.volume = 1; // gain node controls volume now
+      audio.play().then(() => {
+        isPlaying = true;
+        disc.classList.add('spinning');
+        musicBtn.classList.remove('needs-tap');
+        // override the music button to control the gain node instead
+        musicBtn._gainNode = musicGain;
+        musicBtn._audioCtx = ctx;
+      }).catch(() => {
+        musicBtn.classList.add('needs-tap');
+        attachAutoRetry();
+      });
+
+    } catch(e) {
+      // Web Audio API not supported — fall back to plain startMusic()
+      startMusic();
+    }
+
+    // Play the video unmuted as the opening sound alongside the wedding song.
     openingVideo.muted = false;
 
     // Safety net: if playback hasn't actually started within a few
@@ -1497,9 +1530,8 @@ window.WEDDING_CONFIG = {
   openingVideo.addEventListener('ended', completeOpening);
 
   function completeOpening(){
-    // Fade out the video's own audio, then fade in the wedding song
+    // Fade out the video's own audio as the screen transitions away
     if(openingVideo && !openingVideo.paused){
-      // quick volume ramp down on the video
       const ramp = setInterval(() => {
         if(openingVideo.volume > 0.05){
           openingVideo.volume = Math.max(0, openingVideo.volume - 0.08);
@@ -1511,32 +1543,9 @@ window.WEDDING_CONFIG = {
       }, 40);
     }
 
-    // Start wedding song — fade it in from 0 to target volume
-    audio.volume = 0;
-    const p = audio.play();
-    if(p && p.then){
-      p.then(() => {
-        isPlaying = true;
-        disc.classList.add('spinning');
-        musicBtn.classList.remove('needs-tap');
-        // ramp up volume over ~1.2s
-        const fadeIn = setInterval(() => {
-          if(audio.volume < 0.44){
-            audio.volume = Math.min(0.45, audio.volume + 0.03);
-          } else {
-            audio.volume = 0.45;
-            clearInterval(fadeIn);
-          }
-        }, 40);
-      }).catch(() => {
-        // play() was called outside a fresh gesture here (video ended
-        // naturally), which some strict browsers block. Fall back to
-        // the pulsing button so the guest can tap to start music.
-        isPlaying = false;
-        musicBtn.classList.add('needs-tap');
-        attachAutoRetry();
-      });
-    }
+    // Wedding song is already playing from openInvitation — nothing to start.
+    // If music hasn't started yet (Web Audio fallback path), start it now.
+    if(!isPlaying){ startMusic(); }
 
     if(window.gsap){
       gsap.to(opening, {
